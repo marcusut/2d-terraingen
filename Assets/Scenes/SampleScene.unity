@@ -448,7 +448,7 @@ MonoBehaviour:
   chunkWidth: 16
   renderDistanceInChunks: 6
   baseHeight: 8
-  heightScale: 6
+  heightScale: 16
   noiseFrequency: 0.05
   fillDepth: 40
   seed: 12345
@@ -517,6 +517,65 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1747516882}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1064854182
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1064854184}
+  - component: {fileID: 1064854183}
+  m_Layer: 9
+  m_Name: Clouds
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1064854183
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1064854182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 96229ec1856a605409248cb63dde0449, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CloudManager
+  cam: {fileID: 519420031}
+  cloudSprites:
+  - {fileID: -3289020868813362532, guid: d3ae5f049c3077745b41a140a0c76b3d, type: 3}
+  container: {fileID: 0}
+  parallax: 0.2
+  targetClouds: 30
+  extraWidth: 20
+  yRange: {x: 20, y: 40}
+  speedRange: {x: 0.3, y: 1.2}
+  scaleRange: {x: 1.5, y: 5}
+  sortingLayerName: Background
+  orderInLayer: -50
+  integerScaleOnly: 0
+  minIntegerScale: 1
+  maxIntegerScale: 3
+--- !u!4 &1064854184
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1064854182}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1527861735
@@ -1105,3 +1164,4 @@ SceneRoots:
   - {fileID: 1869623180}
   - {fileID: 654226344}
   - {fileID: 945868059}
+  - {fileID: 1064854184}
