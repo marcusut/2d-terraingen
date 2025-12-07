@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
@@ -8,6 +9,7 @@ public class TerrainGenerator : MonoBehaviour
     public Tilemap tilemap;              // Ground tilemap (with collider)
     public TileBase[] grassVariants;     // 4 grass tiles
     public TileBase[] dirtVariants;      // 4 dirt tiles
+    public TileBase[] rockVariants;
 
     [Header("Decor (No colliders / pass-through)")]
     public Tilemap decoTilemap;          // Separate tilemap without any collider
@@ -22,6 +24,8 @@ public class TerrainGenerator : MonoBehaviour
     public float noiseFrequency = 0.05f;   // lower = wider hills
     public int fillDepth = 40;             // how far we fill dirt below surface
     public int seed = 12345;               // change to get a different world
+    [Range(0f, 1f)] public float rockChance = 0.10f;
+    public int rockSize = 1;
 
     [Header("Tree Generation")]
     [Range(0f, 1f)] public float treeChance = 0.10f; // per-column probability
@@ -106,15 +110,26 @@ public class TerrainGenerator : MonoBehaviour
             int surfaceY = GetSurfaceHeight(x);
 
             // Grass for the surface
-            var grassTile = VariantForPosition(grassVariants, x, surfaceY);
-            tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassTile);
+            if (tilemap.GetTile(new Vector3Int(x, surfaceY, 0)) == null)
+            {
+                var grassTile = VariantForPosition(grassVariants, x, surfaceY);
+                tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassTile);
+            }
+            
 
             // Dirt below the surface
             for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
             {
-                var dirtTile = VariantForPosition(dirtVariants, x, y);
-                tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
+                if (tilemap.GetTile(new Vector3Int(x, y, 0)) == null)
+                {
+                    var dirtTile = VariantForPosition(dirtVariants, x, y);
+                    tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
+                }
             }
+
+            int r = PositiveHash(x, surfaceY, seed);
+            int rock_y = surfaceY - (r % fillDepth) + rockSize;
+            TryPlaceRock(tilemap, x, rock_y);
 
             // Clear above/below
             for (int y = surfaceY + 1; y <= maxY; y++)
@@ -126,6 +141,27 @@ public class TerrainGenerator : MonoBehaviour
             if (decoTilemap != null)
                 TryPlaceTreeAtColumn(x, surfaceY);
         }
+    }
+
+    void TryPlaceRock(Tilemap tilemap, int x, int y)
+    {
+        var rockTile = VariantForPosition(rockVariants, x, y);
+        if (rockTile == null) return;
+
+        int r = PositiveHash(x, y, seed);
+        if ((r % 10000) / 10000f > rockChance) return;
+
+        //generate a rock
+        int x_start = x - rockSize;
+        int y_start = y - rockSize;
+        for (int i = x_start; i < x_start + rockSize; i++)
+        {
+            for (int j = y_start; j < y_start + rockSize; j++)
+            {
+                tilemap.SetTile(new Vector3Int(i, j, 0), rockTile);
+            }
+        }
+
     }
 
     void ClearChunk(Vector2Int chunk)

@@ -441,6 +441,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 0ea1b024885c94b40a6913181c34940d, type: 2}
   - {fileID: 11400000, guid: 568098ce584e33249883f7133d52e423, type: 2}
   - {fileID: 11400000, guid: 064dbed7958da62419bf5c89535b2463, type: 2}
+  rockVariants:
+  - {fileID: 11400000, guid: add75cf12d1dee54995d5be7321c43ff, type: 2}
   decoTilemap: {fileID: 1747516884}
   trunkTile: {fileID: 11400000, guid: b1ea90725eb502940b5147a641717f94, type: 2}
   leafTiles:
@@ -452,6 +454,8 @@ MonoBehaviour:
   noiseFrequency: 0.05
   fillDepth: 40
   seed: 12345
+  rockChance: 0.1
+  rockSize: 2
   treeChance: 0.1
   requireFlatSpot: 1
   maxSlope: 1
@@ -929,7 +933,7 @@ TilemapRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 0
+  m_SortingOrder: -1
   m_ChunkSize: {x: 32, y: 32, z: 32}
   m_ChunkCullingBounds: {x: 0, y: 0, z: 0}
   m_MaxChunkCount: 16
@@ -1126,7 +1130,7 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 0
+  m_SortingOrder: 1
   m_Sprite: {fileID: -1307266980, guid: e5efa043206dd664f99bd88af6a44e2b, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
