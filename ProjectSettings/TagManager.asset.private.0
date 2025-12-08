@@ -8,12 +8,12 @@ TagManager:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - Player
+  - 
   - Water
   - UI
-  - PlayerIcon
   - 
-  - Ground
+  - 
+  - 
   - 
   - 
   - 
@@ -40,9 +40,6 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
-    locked: 0
-  - name: MapElements
-    uniqueID: 4058087449
     locked: 0
   m_RenderingLayers:
   - Default
