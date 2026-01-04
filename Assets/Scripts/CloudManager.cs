@@ -7,6 +7,7 @@ public class CloudManager : MonoBehaviour
     public Camera cam;                      // Drag Main Camera (auto-fills if left empty)
     public Sprite[] cloudSprites;           // Assign your cloud sprites
     public Transform container;             // Optional parent for clouds (defaults to this)
+    [SerializeField] private DayNightCycle dayNightCycle;     // Reference to DayNightCycle for tinting
 
     [Header("Parallax")]
     [Range(0f, 1f)] public float parallax = 0.2f; // 0 = fixed to world, 1 = moves with camera
@@ -31,6 +32,7 @@ public class CloudManager : MonoBehaviour
     {
         public GameObject go;
         public Transform t;
+        public SpriteRenderer sr;
         public float z;
         public float speed;      // wind drift
         public float baseX;      // base position (pre-parallax)
@@ -38,23 +40,31 @@ public class CloudManager : MonoBehaviour
         public float localDrift; // accumulates with speed over time
     }
 
-    readonly List<Cloud> clouds = new List<Cloud>();
-    float halfHeight, halfWidth;
+    readonly List<Cloud> _clouds = new List<Cloud>();
+    float _halfHeight, _halfWidth;
 
     void Awake()
     {
         if (!cam) cam = Camera.main;
         if (!container) container = transform;
+        if (!dayNightCycle) dayNightCycle = FindObjectOfType<DayNightCycle>();
     }
 
     void Start()
     {
         RecalcViewport();
-        // Ensure sorting layer exists (won’t create it, just warns)
+        // Ensure sorting layer exists (wont create it, just warns)
         if (!SortingLayerExists(sortingLayerName))
             Debug.LogWarning($"CloudManager: Sorting layer '{sortingLayerName}' not found. Using Default.");
 
-        while (clouds.Count < targetClouds)
+        // Prevent infinite loop if no sprites are assigned
+        if (cloudSprites == null || cloudSprites.Length == 0)
+        {
+            Debug.LogWarning("CloudManager: No cloud sprites assigned. Clouds will not be generated.");
+            return;
+        }
+
+        while (_clouds.Count < targetClouds)
             SpawnOne(randomizeX: true);
     }
 
@@ -65,14 +75,16 @@ public class CloudManager : MonoBehaviour
         RecalcViewport();
 
         // Camera-centered horizontal band (screen width + margins)
-        float leftEdge = cam.transform.position.x - halfWidth - extraWidth;
-        float rightEdge = cam.transform.position.x + halfWidth + extraWidth;
+        float leftEdge = cam.transform.position.x - _halfWidth - extraWidth;
+        float rightEdge = cam.transform.position.x + _halfWidth + extraWidth;
         float span = rightEdge - leftEdge;     // total wrap width
 
         float camX = cam.transform.position.x;
         float parallaxX = camX * parallax;
 
-        foreach (var c in clouds)
+        Color currentTint = dayNightCycle != null ? dayNightCycle.GetCloudTint() : Color.white;
+
+        foreach (var c in _clouds)
         {
             // advance wind drift
             c.localDrift += c.speed * Time.deltaTime;
@@ -100,15 +112,18 @@ public class CloudManager : MonoBehaviour
             }
 
             c.t.position = new Vector3(worldX, worldY, c.z);
+            
+            // Update tint
+            if (c.sr) c.sr.color = currentTint;
         }
 
         // Keep population steady if you tweak targetClouds at runtime
-        while (clouds.Count < targetClouds) SpawnOne(randomizeX: false);
-        while (clouds.Count > targetClouds)
+        while (_clouds.Count < targetClouds) SpawnOne(randomizeX: false);
+        while (_clouds.Count > targetClouds)
         {
-            var last = clouds[clouds.Count - 1];
+            var last = _clouds[^1];
             if (last != null && last.go) Destroy(last.go);
-            clouds.RemoveAt(clouds.Count - 1);
+            _clouds.RemoveAt(_clouds.Count - 1);
         }
     }
 
@@ -136,8 +151,8 @@ public class CloudManager : MonoBehaviour
         // initial placement within the camera band
         float baseY = Random.Range(yRange.x, yRange.y);
         float baseX = randomizeX
-            ? Random.Range(-halfWidth - extraWidth, halfWidth + extraWidth)
-            : -halfWidth - extraWidth; // spawn just to the left so it drifts in
+            ? Random.Range(-_halfWidth - extraWidth, _halfWidth + extraWidth)
+            : -_halfWidth - extraWidth; // spawn just to the left so it drifts in
 
         float z = 0f;
         float parallaxX = camX * parallax;
@@ -147,20 +162,21 @@ public class CloudManager : MonoBehaviour
         {
             go = go,
             t = go.transform,
+            sr = sr,
             z = z,
             speed = Random.Range(speedRange.x, speedRange.y),
             baseX = baseX,
             baseY = baseY,
             localDrift = 0f
         };
-        clouds.Add(c);
+        _clouds.Add(c);
     }
 
     void RecalcViewport()
     {
         if (!cam) return;
-        halfHeight = cam.orthographicSize;
-        halfWidth = halfHeight * cam.aspect;
+        _halfHeight = cam.orthographicSize;
+        _halfWidth = _halfHeight * cam.aspect;
     }
 
     static bool SortingLayerExists(string layerName)

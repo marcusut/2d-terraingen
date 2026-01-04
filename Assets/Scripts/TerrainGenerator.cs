@@ -36,6 +36,10 @@ public class TerrainGenerator : MonoBehaviour
     public int minCanopyRadius = 2;
     public int maxCanopyRadius = 3;
 
+    [Header("Lighting Support")]
+    public Tilemap darknessTilemap; // Optional: Tilemap to place "darkness" tiles
+    public TileBase darknessTile;   // A semi-transparent black tile
+
     Transform target; // the player
     readonly HashSet<Vector2Int> activeChunks = new();
     readonly HashSet<Vector2Int> neededThisFrame = new();
@@ -104,6 +108,8 @@ public class TerrainGenerator : MonoBehaviour
         if (decoTilemap != null)
             ClearDecoRange(startX, endX, minY, maxY);
         
+        if (darknessTilemap != null)
+             ClearDarknessRange(startX, endX, minY, maxY);
 
         for (int x = startX; x < endX; x++)
         {
@@ -124,6 +130,15 @@ public class TerrainGenerator : MonoBehaviour
                 {
                     var dirtTile = VariantForPosition(dirtVariants, x, y);
                     tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
+                    
+                    // Add darkness tile if deep enough
+                    if (darknessTilemap != null && darknessTile != null)
+                    {
+                        if (y < surfaceY - 5) // Start darkness 5 blocks down
+                        {
+                            darknessTilemap.SetTile(new Vector3Int(x, y, 0), darknessTile);
+                        }
+                    }
                 }
             }
 
@@ -179,6 +194,8 @@ public class TerrainGenerator : MonoBehaviour
                 tilemap.SetTile(new Vector3Int(x, y, 0), null);
                 if (decoTilemap != null)
                     decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
+                if (darknessTilemap != null)
+                    darknessTilemap.SetTile(new Vector3Int(x, y, 0), null);
             }
         }
     }
@@ -189,6 +206,14 @@ public class TerrainGenerator : MonoBehaviour
         for (int x = startX; x < endX; x++)
             for (int y = minY; y <= maxY; y++)
                 decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
+    }
+    
+    void ClearDarknessRange(int startX, int endX, int minY, int maxY)
+    {
+        if (darknessTilemap == null) return;
+        for (int x = startX; x < endX; x++)
+            for (int y = minY; y <= maxY; y++)
+                darknessTilemap.SetTile(new Vector3Int(x, y, 0), null);
     }
 
     int GetSurfaceHeight(int x)
