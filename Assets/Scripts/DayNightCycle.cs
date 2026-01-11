@@ -13,10 +13,11 @@ public class DayNightCycle : MonoBehaviour
     [Header("References")]
     public Transform sunTransform;
     public Transform moonTransform;
-    public Light2D globalLight; // The ambient global light
-    public Light2D sunlight;    // The directional sun light (casts shadows)
+    public Light2D globalLight; // The ambient global light (No Shadows)
+    public Light2D sunlight;    // The Point Light on the Sun Sprite (Glow, No Shadows)
+    public Light2D worldLight;  // NEW: Directional Light for World Shadows
     public Camera mainCamera;
-    public StarField starField; // Reference to StarField script
+    public StarField starField; 
 
     [Header("Orbit Settings")]
     public float orbitRadius = 10f;
@@ -38,7 +39,6 @@ public class DayNightCycle : MonoBehaviour
 
     private void Awake()
     {
-        // Ensure gradients are not null to prevent crashes if not assigned
         if (skyColor == null) skyColor = new Gradient();
         if (sunColor == null) sunColor = new Gradient();
         if (moonColor == null) moonColor = new Gradient();
@@ -71,12 +71,12 @@ public class DayNightCycle : MonoBehaviour
         float camX = mainCamera.transform.position.x;
         float camY = mainCamera.transform.position.y;
         
-        // The center of the orbit is offset by the horizon height and parallax
         float skyYOffset = camY * verticalParallax;
         float orbitCenterY = skyYOffset + horizonHeight + orbitRadius;
 
         float sunAngle = (0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f);
 
+        // Sun Visuals (Parallax)
         if (sunTransform != null)
         {
             float sunX = Mathf.Cos(sunAngle) * orbitRadius;
@@ -89,6 +89,7 @@ public class DayNightCycle : MonoBehaviour
             sunTransform.rotation = Quaternion.Euler(0, 0, rotZ);
         }
 
+        // Moon Visuals (Parallax)
         if (moonTransform != null)
         {
             float moonAngle = sunAngle + Mathf.PI;
@@ -105,19 +106,19 @@ public class DayNightCycle : MonoBehaviour
 
     private void UpdateLighting()
     {
-        // Global Ambient
+        // 1. Global Ambient (Base brightness, no shadows)
         if (globalLight != null && ambientLightColor != null)
         {
             globalLight.color = ambientLightColor.Evaluate(timeOfDay);
         }
 
-        // Camera Background
+        // 2. Camera Background
         if (mainCamera != null && skyColor != null)
         {
             mainCamera.backgroundColor = skyColor.Evaluate(timeOfDay);
         }
         
-        // Sun
+        // 3. Sun Glow (Visual only)
         Color currentSunColor = sunColor != null ? sunColor.Evaluate(timeOfDay) : Color.white;
         if (sunlight != null)
         {
@@ -129,8 +130,27 @@ public class DayNightCycle : MonoBehaviour
         {
             sunSprite.color = currentSunColor;
         }
+
+        // 4. World Light (Directional Shadows) - NEW
+        if (worldLight != null)
+        {
+            worldLight.color = currentSunColor;
+            
+            // Intensity matches Sun height
+            float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
+            worldLight.intensity = Mathf.Clamp01(sunHeight);
+
+            // Optional: Rotate slightly to match time of day, but keep mostly downward
+            // Noon (0.5) = -90 deg (Down). Sunrise (0.25) = -45 deg? Sunset (0.75) = -135 deg?
+            // Let's clamp it so shadows don't get too long/weird.
+            // Range: -60 to -120 degrees.
+            float angle = Mathf.Lerp(-60f, -120f, (timeOfDay - 0.25f) * 2f); // Map 0.25-0.75 to angles
+            if (timeOfDay < 0.25f || timeOfDay > 0.75f) angle = -90f; // Reset at night
+            
+            worldLight.transform.rotation = Quaternion.Euler(0, 0, angle);
+        }
         
-        // Moon
+        // 5. Moon Glow
         Color currentMoonColor = moonColor != null ? moonColor.Evaluate(timeOfDay) : Color.white;
         if (moonTransform != null)
         {

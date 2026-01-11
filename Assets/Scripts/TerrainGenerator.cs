@@ -16,6 +16,10 @@ public class TerrainGenerator : MonoBehaviour
     public TileBase trunkTile;           // 16x16 trunk tile
     public TileBase[] leafTiles;         // 1+ leaf variants (optional)
 
+    [Header("Background Walls (No colliders)")]
+    public Tilemap wallTilemap;          // Background wall tilemap
+    public TileBase wallTile;            // The wall tile (e.g. darker dirt)
+
     [Header("World Settings")]
     public int chunkWidth = 16;
     public int renderDistanceInChunks = 6; // how many chunks left/right to keep loaded
@@ -35,10 +39,6 @@ public class TerrainGenerator : MonoBehaviour
     public int maxTrunkHeight = 6;
     public int minCanopyRadius = 2;
     public int maxCanopyRadius = 3;
-
-    [Header("Lighting Support")]
-    public Tilemap darknessTilemap; // Optional: Tilemap to place "darkness" tiles
-    public TileBase darknessTile;   // A semi-transparent black tile
 
     Transform target; // the player
     readonly HashSet<Vector2Int> activeChunks = new();
@@ -108,8 +108,8 @@ public class TerrainGenerator : MonoBehaviour
         if (decoTilemap != null)
             ClearDecoRange(startX, endX, minY, maxY);
         
-        if (darknessTilemap != null)
-             ClearDarknessRange(startX, endX, minY, maxY);
+        if (wallTilemap != null)
+             ClearWallRange(startX, endX, minY, maxY);
 
         for (int x = startX; x < endX; x++)
         {
@@ -130,14 +130,17 @@ public class TerrainGenerator : MonoBehaviour
                 {
                     var dirtTile = VariantForPosition(dirtVariants, x, y);
                     tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
-                    
-                    // Add darkness tile if deep enough
-                    if (darknessTilemap != null && darknessTile != null)
+                }
+                
+                // Place Wall behind dirt (and slightly above/below if needed)
+                // We place walls everywhere underground so if you dig, there is a wall.
+                if (wallTilemap != null && wallTile != null)
+                {
+                    // Start placing walls from a bit below surface to avoid them sticking out on slopes
+                    // Or place them everywhere below surfaceY
+                    if (y <= surfaceY) 
                     {
-                        if (y < surfaceY - 5) // Start darkness 5 blocks down
-                        {
-                            darknessTilemap.SetTile(new Vector3Int(x, y, 0), darknessTile);
-                        }
+                        wallTilemap.SetTile(new Vector3Int(x, y, 0), wallTile);
                     }
                 }
             }
@@ -194,8 +197,8 @@ public class TerrainGenerator : MonoBehaviour
                 tilemap.SetTile(new Vector3Int(x, y, 0), null);
                 if (decoTilemap != null)
                     decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
-                if (darknessTilemap != null)
-                    darknessTilemap.SetTile(new Vector3Int(x, y, 0), null);
+                if (wallTilemap != null)
+                    wallTilemap.SetTile(new Vector3Int(x, y, 0), null);
             }
         }
     }
@@ -208,12 +211,12 @@ public class TerrainGenerator : MonoBehaviour
                 decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
     }
     
-    void ClearDarknessRange(int startX, int endX, int minY, int maxY)
+    void ClearWallRange(int startX, int endX, int minY, int maxY)
     {
-        if (darknessTilemap == null) return;
+        if (wallTilemap == null) return;
         for (int x = startX; x < endX; x++)
             for (int y = minY; y <= maxY; y++)
-                darknessTilemap.SetTile(new Vector3Int(x, y, 0), null);
+                wallTilemap.SetTile(new Vector3Int(x, y, 0), null);
     }
 
     int GetSurfaceHeight(int x)
