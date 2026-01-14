@@ -38,17 +38,23 @@ TagManager:
   - 
   - 
   m_SortingLayers:
-  - name: Default
-    uniqueID: 0
+  - name: Clouds
+    uniqueID: 1972276771
     locked: 0
-  - name: Player
-    uniqueID: 3872598739
+  - name: Background
+    uniqueID: 2100223377
+    locked: 0
+  - name: Ground
+    uniqueID: 2196957817
     locked: 0
   - name: MapElements
     uniqueID: 4058087449
     locked: 0
-  - name: Ground
-    uniqueID: 2196957817
+  - name: Player
+    uniqueID: 3872598739
+    locked: 0
+  - name: Default
+    uniqueID: 0
     locked: 0
   m_RenderingLayers:
   - Default

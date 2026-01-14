@@ -20,7 +20,7 @@ public class CloudManager : MonoBehaviour
     [Header("Cloud Look")]
     public Vector2 speedRange = new Vector2(0.3f, 1.0f); // World units/sec (use negatives for leftward wind)
     public Vector2 scaleRange = new Vector2(1.5f, 3.5f); // Uniform scale
-    public string sortingLayerName = "Background";
+    public string sortingLayerName = "Clouds";
     public int orderInLayer = -50;
 
     [Header("Pixel Art Helpers")]

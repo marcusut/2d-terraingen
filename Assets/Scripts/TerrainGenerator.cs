@@ -1,12 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AppUI.Redux;
-using Unity.Mathematics;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
-using UnityEngine.WSA;
 
 public class TerrainGenerator : MonoBehaviour
 {
@@ -15,8 +11,8 @@ public class TerrainGenerator : MonoBehaviour
     public TileBase[] grassVariants;     // 4 grass tiles
     public TileBase[] grassEdges;
     public TileBase[] dirtVariants;      // 4 dirt tiles
-    public TileBase[] dirtEdges;      // 4 dirt tiles
-    public TileBase[] dirtCorners;      // 4 dirt tiles
+    public TileBase[] dirtEdges;         // dirt edge tiles (make sure indexes exist!)
+    public TileBase[] dirtCorners;       // dirt corner tiles
     public TileBase[] rockTiles;
 
     [Header("Decor (No colliders / pass-through)")]
@@ -39,6 +35,26 @@ public class TerrainGenerator : MonoBehaviour
     [Range(0f, 1f)] public float rockChance = 0.10f;
     public int minRockSize = 1;
     public int maxRockSize = 3;
+
+    [Header("Cave Generation")]
+    public bool generateCaves = true;
+    public float caveFrequency = 0.08f;                 // lower = bigger features
+    [Range(0f, 1f)] public float caveThreshold = 0.58f; // higher = fewer caves
+    public int caveSurfaceBuffer = 3;                   // keeps a roof for noise-caves (entrances ignore this)
+    public bool useDomainWarp = true;
+    public float caveWarpFrequency = 0.03f;
+    public float caveWarpAmplitude = 6f;
+    [Range(1, 6)] public int caveOctaves = 3;
+
+    [Header("Cave Entrances (natural, diagonal/sideways)")]
+    [Range(0f, 1f)] public float caveEntranceChance = 0.03f; // per-column chance
+    public bool entranceRequireFlatSpot = true;
+    [Range(4, 80)] public int entranceMinSteps = 14;          // length of entrance "worm"
+    [Range(4, 120)] public int entranceMaxSteps = 32;
+    [Range(0, 30)] public int entranceMaxHorizontalDrift = 8; // how far sideways it can wander from the opening
+    [Range(1, 3)] public int entranceRadius = 1;              // tunnel thickness along the path
+    [Range(1, 5)] public int entranceMouthRadius = 2;         // bigger opening at the surface
+    [Range(0, 12)] public int entranceMouthSteps = 4;         // how many steps use mouth radius
 
     [Header("Tree Generation")]
     [Range(0f, 1f)] public float treeChance = 0.10f; // per-column probability
@@ -109,51 +125,64 @@ public class TerrainGenerator : MonoBehaviour
         int startX = chunk.x * chunkWidth;
         int endX = startX + chunkWidth;
 
-        
         int minY = baseHeight - fillDepth - 8;
         int maxY = baseHeight + heightScale + 8;
 
-        
         if (decoTilemap != null)
             ClearDecoRange(startX, endX, minY, maxY);
-        
+
         if (wallTilemap != null)
-             ClearWallRange(startX, endX, minY, maxY);
+            ClearWallRange(startX, endX, minY, maxY);
+
+        // Precompute entrance carve cells for this chunk (+margin), so entrances can wander diagonally/sideways
+        // without chunk seams.
+        HashSet<Vector2Int> entranceCarve = BuildEntranceCarveSet(startX, endX, minY, maxY);
 
         for (int x = startX; x < endX; x++)
         {
             int surfaceY = GetSurfaceHeight(x);
 
-            // Grass for the surface
-            if (tilemap.GetTile(new Vector3Int(x, surfaceY, 0)) == null)
+            // Surface: place grass unless entrance carved this cell
+            if (entranceCarve.Contains(new Vector2Int(x, surfaceY)))
             {
-                var grassTile = VariantForPosition(grassVariants, x, surfaceY);
-                tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassTile);
+                tilemap.SetTile(new Vector3Int(x, surfaceY, 0), null);
+                if (wallTilemap != null && wallTile != null)
+                    wallTilemap.SetTile(new Vector3Int(x, surfaceY, 0), wallTile);
+            }
+            else
+            {
+                if (tilemap.GetTile(new Vector3Int(x, surfaceY, 0)) == null)
+                {
+                    var grassTile = VariantForPosition(grassVariants, x, surfaceY);
+                    tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassTile);
+                }
             }
 
-
-            // Dirt below the surface
-            for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--) 
+            // Dirt below the surface, with cave carving + entrance carving
+            for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
             {
-                if (tilemap.GetTile(new Vector3Int(x, y, 0)) == null)
+                bool isEntrance = entranceCarve.Contains(new Vector2Int(x, y));
+                bool isCave = isEntrance || IsCaveCell(x, y, surfaceY);
+
+                if (!isCave)
                 {
-                    var dirtTile = VariantForPosition(dirtVariants, x, y);
-                    tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
-                }
-                
-                // Place Wall behind dirt (and slightly above/below if needed)
-                // We place walls everywhere underground so if you dig, there is a wall.
-                if (wallTilemap != null && wallTile != null)
-                {
-                    // Start placing walls from a bit below surface to avoid them sticking out on slopes
-                    // Or place them everywhere below surfaceY
-                    if (y <= surfaceY) 
+                    if (tilemap.GetTile(new Vector3Int(x, y, 0)) == null)
                     {
-                        wallTilemap.SetTile(new Vector3Int(x, y, 0), wallTile);
+                        var dirtTile = VariantForPosition(dirtVariants, x, y);
+                        tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
                     }
                 }
+                else
+                {
+                    tilemap.SetTile(new Vector3Int(x, y, 0), null);
+                }
+
+                // Wall behind everything underground (including caves/entrances)
+                if (wallTilemap != null && wallTile != null)
+                    wallTilemap.SetTile(new Vector3Int(x, y, 0), wallTile);
             }
 
+            // Rocks (avoid placing inside carved-out empty space)
             int r = PositiveHash(x, surfaceY, seed);
             int rock_y = surfaceY - (r % fillDepth) + minRockSize;
             TryPlaceRock(tilemap, x, rock_y);
@@ -164,23 +193,32 @@ public class TerrainGenerator : MonoBehaviour
             for (int y = surfaceY - fillDepth - 1; y >= minY; y--)
                 tilemap.SetTile(new Vector3Int(x, y, 0), null);
 
-            
+            // Don't place trees at (or right next to) entrances
             if (decoTilemap != null)
-                TryPlaceTreeAtColumn(x, surfaceY);
+            {
+                bool nearEntrance =
+                    entranceCarve.Contains(new Vector2Int(x, surfaceY)) ||
+                    entranceCarve.Contains(new Vector2Int(x - 1, GetSurfaceHeight(x - 1))) ||
+                    entranceCarve.Contains(new Vector2Int(x + 1, GetSurfaceHeight(x + 1)));
+
+                if (!nearEntrance)
+                    TryPlaceTreeAtColumn(x, surfaceY);
+            }
         }
 
-        //Pass two to set edges and corners and stuff
-        //Also shading
-        //Covers a one tile wider range to fix tiles on the borders of chunks
-        for (int x = startX-1; x < endX+1; x++)
+        // Pass two to set edges / shading (covers 1 tile wider for chunk borders)
+        for (int x = startX - 1; x < endX + 1; x++)
         {
             int surfaceY = GetSurfaceHeight(x);
 
-            // Grass for the surface
-            if (grassVariants.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))) || grassEdges.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))))
+            // Grass edges
+            if (grassVariants.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))) ||
+                grassEdges.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))))
             {
                 TileBase grassEdge = VariantForPosition(grassVariants, x, surfaceY);
-                if (tilemap.GetTile(new Vector3Int(x-1, surfaceY, 0)) == null && tilemap.GetTile(new Vector3Int(x + 1, surfaceY, 0)) == null)
+
+                if (tilemap.GetTile(new Vector3Int(x - 1, surfaceY, 0)) == null &&
+                    tilemap.GetTile(new Vector3Int(x + 1, surfaceY, 0)) == null)
                 {
                     grassEdge = grassEdges[2];
                 }
@@ -192,33 +230,33 @@ public class TerrainGenerator : MonoBehaviour
                 {
                     grassEdge = grassEdges[1];
                 }
+
                 tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassEdge);
             }
 
-            // Dirt below the surface
+            // Dirt edges + shading
             float depthShadowThing = Math.Max(1, fillDepth - 5);
             for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
             {
-                //Currently only side edge tiles for dirt
                 if (dirtVariants.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
                     dirtCorners.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
                     dirtEdges.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))))
                 {
                     var dirtTile = VariantForPosition(dirtVariants, x, y);
 
-                    
                     if (tilemap.GetTile(new Vector3Int(x + 1, y, 0)) == null)
                     {
-                        dirtTile = dirtEdges[4];
+                        dirtTile = dirtEdges.Length > 4 ? dirtEdges[4] : dirtTile;
                     }
                     else if (tilemap.GetTile(new Vector3Int(x - 1, y, 0)) == null)
                     {
-                        dirtTile = dirtEdges[3];
+                        dirtTile = dirtEdges.Length > 3 ? dirtEdges[3] : dirtTile;
                     }
+
                     tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
                 }
 
-                //Shading
+                // Shading
                 TileBase tile = tilemap.GetTile(new Vector3Int(x, y, 0));
                 if (tile != null)
                 {
@@ -233,9 +271,228 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
+    // --- ENTRANCES (worm-carved) ---
+
+    HashSet<Vector2Int> BuildEntranceCarveSet(int startX, int endX, int minY, int maxY)
+    {
+        var set = new HashSet<Vector2Int>();
+        if (!generateCaves || caveEntranceChance <= 0f) return set;
+
+        // Scan a wider X-range so entrances that start outside the chunk but drift into it
+        // still get carved consistently.
+        int margin = entranceMaxHorizontalDrift + entranceMouthRadius + 2;
+        int scanStart = startX - margin;
+        int scanEnd = endX + margin;
+
+        for (int x0 = scanStart; x0 < scanEnd; x0++)
+        {
+            int surfaceY0 = GetSurfaceHeight(x0);
+            if (!HasCaveEntrance(x0, surfaceY0)) continue;
+
+            foreach (var cell in GenerateEntrancePathCells(x0, surfaceY0))
+            {
+                // Keep only cells in the vertical band we care about for this chunk rendering.
+                if (cell.y < minY || cell.y > maxY) continue;
+
+                // We still add cells even if x is outside chunk range; checking later is cheap.
+                set.Add(cell);
+            }
+        }
+
+        return set;
+    }
+
+    IEnumerable<Vector2Int> GenerateEntrancePathCells(int startX, int surfaceY)
+    {
+        // Deterministic RNG based on opening position
+        int rngSeed = PositiveHash(startX, surfaceY, seed ^ 0x4D2C1B7F);
+        var rng = new DeterministicRng(rngSeed);
+
+        int steps = Mathf.Clamp(
+            rng.RangeInclusive(entranceMinSteps, entranceMaxSteps),
+            1, 200);
+
+        int x = startX;
+        int y = surfaceY;
+
+        // Direction bias: generally downwards, with occasional sideways.
+        // We cap horizontal drift to keep it local (and chunk-safe with our margin).
+        for (int i = 0; i < steps; i++)
+        {
+            int radius = (i < entranceMouthSteps) ? entranceMouthRadius : entranceRadius;
+            foreach (var c in CarveDiamondCells(x, y, radius))
+                yield return c;
+
+            // Decide next move
+            // 0..1
+            float u = rng.Next01();
+
+            int nx = x;
+            int ny = y;
+
+            // Strong downward bias, but can zig-zag and sometimes go sideways
+            if (u < 0.50f)
+            {
+                // down
+                ny -= 1;
+            }
+            else if (u < 0.70f)
+            {
+                // down-left
+                nx -= 1; ny -= 1;
+            }
+            else if (u < 0.90f)
+            {
+                // down-right
+                nx += 1; ny -= 1;
+            }
+            else if (u < 0.95f)
+            {
+                // left
+                nx -= 1;
+            }
+            else
+            {
+                // right
+                nx += 1;
+            }
+
+            // Enforce drift limit from entrance mouth
+            nx = Mathf.Clamp(nx, startX - entranceMaxHorizontalDrift, startX + entranceMaxHorizontalDrift);
+
+            // Keep moving down overall (avoid long flat tunnels right at the surface)
+            // If we didn't go down for a couple steps, force a down step occasionally.
+            if (ny == y && i < 6 && (i % 2 == 1))
+                ny -= 1;
+
+            x = nx;
+            y = ny;
+
+            // stop if we've gone deep enough into the ground fill
+            if ((surfaceY - y) > fillDepth) break;
+        }
+    }
+
+    IEnumerable<Vector2Int> CarveDiamondCells(int cx, int cy, int r)
+    {
+        // Manhattan "circle" (diamond) - looks good in tiles and is cheap.
+        for (int dx = -r; dx <= r; dx++)
+        {
+            int rem = r - Mathf.Abs(dx);
+            for (int dy = -rem; dy <= rem; dy++)
+                yield return new Vector2Int(cx + dx, cy + dy);
+        }
+    }
+
+    // Deterministic: per-column decision to start an entrance
+    bool HasCaveEntrance(int x, int surfaceY)
+    {
+        int r = PositiveHash(x, surfaceY, seed ^ 0x6C8E9CF5);
+        float u01 = (r % 10000) / 10000f;
+
+        if (u01 > caveEntranceChance) return false;
+        if (entranceRequireFlatSpot && !IsFlatEnough(x, surfaceY)) return false;
+
+        // avoid entrances immediately adjacent (keeps it nicer)
+        int sL = GetSurfaceHeight(x - 1);
+        int sR = GetSurfaceHeight(x + 1);
+
+        int rL = PositiveHash(x - 1, sL, seed ^ 0x6C8E9CF5);
+        int rR = PositiveHash(x + 1, sR, seed ^ 0x6C8E9CF5);
+
+        float uL = (rL % 10000) / 10000f;
+        float uR = (rR % 10000) / 10000f;
+
+        if (uL <= caveEntranceChance) return false;
+        if (uR <= caveEntranceChance) return false;
+
+        return true;
+    }
+
+    // --- NOISE CAVES ---
+
+    bool IsCaveCell(int x, int y, int surfaceY)
+    {
+        if (!generateCaves) return false;
+
+        int depth = surfaceY - y; // 1 = just below surface
+        if (depth < caveSurfaceBuffer) return false;
+        if (depth > fillDepth) return false;
+
+        float depth01 = Mathf.InverseLerp(caveSurfaceBuffer, fillDepth, depth);
+        float threshold = Mathf.Lerp(caveThreshold + 0.08f, caveThreshold - 0.05f, depth01);
+
+        float wx = 0f, wy = 0f;
+        if (useDomainWarp)
+        {
+            wx = (Mathf.PerlinNoise((x + seed) * caveWarpFrequency, (y + seed) * caveWarpFrequency) - 0.5f) * caveWarpAmplitude;
+            wy = (Mathf.PerlinNoise((x - seed) * caveWarpFrequency, (y - seed) * caveWarpFrequency) - 0.5f) * caveWarpAmplitude;
+        }
+
+        float n = FractalPerlin01((x + seed + wx) * caveFrequency, (y + seed + wy) * caveFrequency, Mathf.Max(1, caveOctaves));
+        return n > threshold;
+    }
+
+    float FractalPerlin01(float x, float y, int octaves)
+    {
+        float sum = 0f;
+        float amp = 1f;
+        float freq = 1f;
+        float norm = 0f;
+
+        for (int i = 0; i < octaves; i++)
+        {
+            sum += Mathf.PerlinNoise(x * freq, y * freq) * amp;
+            norm += amp;
+            amp *= 0.5f;
+            freq *= 2f;
+        }
+
+        return sum / Mathf.Max(0.0001f, norm);
+    }
+
+    // Small deterministic RNG for entrance worms
+    struct DeterministicRng
+    {
+        uint state;
+
+        public DeterministicRng(int seed)
+        {
+            state = (uint)seed;
+            if (state == 0) state = 1;
+        }
+
+        uint NextUInt()
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            return state;
+        }
+
+        public float Next01()
+        {
+            // 0..1 (exclusive of 1)
+            return (NextUInt() & 0x00FFFFFF) / 16777216f;
+        }
+
+        public int RangeInclusive(int min, int max)
+        {
+            if (max < min) (min, max) = (max, min);
+            int span = (max - min) + 1;
+            return min + (int)(Next01() * span);
+        }
+    }
+
+    // --- ROCKS ---
+
     void TryPlaceRock(Tilemap tilemap, int x, int y)
     {
-        if (rockTiles.Length == 0) return;
+        if (rockTiles == null || rockTiles.Length == 0) return;
+
+        // Don't place rocks into empty space (e.g., caves)
+        if (tilemap.GetTile(new Vector3Int(x, y, 0)) == null) return;
+
         var rockTile = rockTiles[0];
 
         int r = PositiveHash(x, y, seed);
@@ -243,15 +500,15 @@ public class TerrainGenerator : MonoBehaviour
 
         int rockSize = (r % ((maxRockSize + 1) - minRockSize)) + minRockSize;
 
-        //generate a rock
         int x_start = x - rockSize;
         int y_start = y - rockSize;
+
         if (rockSize == 1)
         {
             tilemap.SetTile(new Vector3Int(x_start, y_start, 0), rockTile);
             return;
         }
-        //Safety check
+
         if (rockTiles.Length < 10) return;
 
         for (int i = x_start; i < x_start + rockSize; i++)
@@ -259,59 +516,28 @@ public class TerrainGenerator : MonoBehaviour
             for (int j = y_start; j < y_start + rockSize; j++)
             {
                 rockTile = rockTiles[1];
-                //Awful variants code
+
                 if (i == x_start)
                 {
-                    if (j == y_start)
-                    {
-                        //botton left corner
-                        rockTile = rockTiles[7];
-                    }
-                    else if (j == y_start + rockSize - 1)
-                    {
-                        //top left corner
-                        rockTile = rockTiles[2];
-                    }
-                    else
-                    {
-                        //left side
-                        rockTile = rockTiles[5];
-                    }
+                    if (j == y_start) rockTile = rockTiles[7];                  // bottom left
+                    else if (j == y_start + rockSize - 1) rockTile = rockTiles[2]; // top left
+                    else rockTile = rockTiles[5];                                // left
                 }
                 else if (i == x_start + rockSize - 1)
                 {
-                    if (j == y_start)
-                    {
-                        //botton right corner
-                        rockTile = rockTiles[9];
-                    }
-                    else if (j == y_start + rockSize - 1)
-                    {
-                        //top right corner
-                        rockTile = rockTiles[4];
-                    }
-                    else
-                    {
-                        //right side
-                        rockTile = rockTiles[6];
-                    }
+                    if (j == y_start) rockTile = rockTiles[9];                  // bottom right
+                    else if (j == y_start + rockSize - 1) rockTile = rockTiles[4]; // top right
+                    else rockTile = rockTiles[6];                                // right
                 }
-                else if (j == y_start)
-                {
-                    //bottom side
-                    rockTile = rockTiles[8];
-                }
-                else if (j == y_start + rockSize - 1)
-                {
-                    //top side
-                    rockTile = rockTiles[3];
-                }
-                
+                else if (j == y_start) rockTile = rockTiles[8];                  // bottom
+                else if (j == y_start + rockSize - 1) rockTile = rockTiles[3];   // top
+
                 tilemap.SetTile(new Vector3Int(i, j, 0), rockTile);
             }
         }
-
     }
+
+    // --- CLEAR / CHUNK MGMT ---
 
     void ClearChunk(Vector2Int chunk)
     {
@@ -334,7 +560,6 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
-    // clear deco once per chunk
     void ClearDecoRange(int startX, int endX, int minY, int maxY)
     {
         for (int x = startX; x < endX; x++)
@@ -343,15 +568,17 @@ public class TerrainGenerator : MonoBehaviour
             {
                 ClearLeaves(x, GetSurfaceHeight(x));
             }
+
             for (int y = minY; y <= maxY; y++)
-                //We're removing leaves a bit differently to avoid them getting cut off
-                if (!leafTiles.Contains(decoTilemap.GetTile(new Vector3Int(x, y, 0))))
+            {
+                if (leafTiles == null || !leafTiles.Contains(decoTilemap.GetTile(new Vector3Int(x, y, 0))))
                 {
                     decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
                 }
+            }
         }
     }
-    
+
     void ClearWallRange(int startX, int endX, int minY, int maxY)
     {
         if (wallTilemap == null) return;
@@ -360,9 +587,11 @@ public class TerrainGenerator : MonoBehaviour
                 wallTilemap.SetTile(new Vector3Int(x, y, 0), null);
     }
 
+    // --- HEIGHT / VARIANTS / HASH ---
+
     int GetSurfaceHeight(int x)
     {
-        float n = Mathf.PerlinNoise((x + seed) * noiseFrequency, 0f); // 0..1
+        float n = Mathf.PerlinNoise((x + seed) * noiseFrequency, 0f);
         int h = baseHeight + Mathf.RoundToInt((n - 0.5f) * 2f * heightScale);
         return h;
     }
@@ -374,7 +603,6 @@ public class TerrainGenerator : MonoBehaviour
         return variants[idx];
     }
 
-    // stable pseudo-random index per tile coordinate
     int PositiveHash(int x, int y, int s)
     {
         unchecked
@@ -391,7 +619,8 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
-    // Trees
+    // --- TREES ---
+
     bool IsFlatEnough(int x, int surfaceY)
     {
         int hL = GetSurfaceHeight(x - 1);
@@ -403,14 +632,12 @@ public class TerrainGenerator : MonoBehaviour
     {
         if (decoTilemap == null || trunkTile == null) return;
 
-        
         int r = PositiveHash(x, surfaceY, seed);
         float u01 = (r % 10000) / 10000f;
 
         if (u01 > treeChance) return;
         if (requireFlatSpot && !IsFlatEnough(x, surfaceY)) return;
 
-        //Adjacent trees look bad
         if (ContainsTree(x + 1, surfaceY)) return;
         if (ContainsTree(x - 1, surfaceY)) return;
 
@@ -422,77 +649,51 @@ public class TerrainGenerator : MonoBehaviour
             minCanopyRadius + ((r / 7) % (maxCanopyRadius - minCanopyRadius + 1)),
             minCanopyRadius, maxCanopyRadius);
 
-        
-        TileBase leaf = (leafTiles != null && leafTiles.Length > 0)
-            ? leafTiles[0]
-            : null;
+        TileBase leaf = (leafTiles != null && leafTiles.Length > 0) ? leafTiles[0] : null;
 
-        // place trunk
         int baseY = surfaceY + 1;
         for (int y = baseY; y < baseY + trunkH; y++)
             decoTilemap.SetTile(new Vector3Int(x, y, 0), trunkTile);
 
-        // canopy origin at trunk top
         int cx = x;
         int cy = baseY + trunkH;
 
-        
-            
-        PlaceTriangle(cx, cy, canopyR + 1, leaf); 
+        PlaceTriangle(cx, cy, canopyR + 1, leaf);
     }
 
     void PlaceTriangle(int cx, int cy, int h, TileBase leaf)
     {
         if (leaf == null) return;
-        if (leafTiles.Length < 10) return;
+        if (leafTiles == null || leafTiles.Length < 10) return;
 
         var leaf_start = leaf;
-        
+
         for (int i = 0; i < h; i++)
         {
-            int half = (h - 1) - i;   
-            int y = cy + i;           
+            int half = (h - 1) - i;
+            int y = cy + i;
             for (int dx = -half; dx <= half; dx++)
             {
                 leaf = leaf_start;
                 if (i == 0)
                 {
-                    if (dx == -half)
-                    {
-                        //bottom left
-                        //always single
-                        leaf = leafTiles[8];
-                    }
-                    else if (dx == half)
-                    {
-                        //bottom right
-                        //always single
-                        leaf = leafTiles[9];
-                    }
-                    else
-                    {
-                        //bottom
-                        leaf = leafTiles[5];
-                    }
+                    if (dx == -half) leaf = leafTiles[8];
+                    else if (dx == half) leaf = leafTiles[9];
+                    else leaf = leafTiles[5];
                 }
                 else if (i == h - 1)
                 {
-                    //top
-                    //this is always single
                     leaf = leafTiles[7];
                 }
                 else if (dx == -half)
                 {
-                    //left top corner
                     leaf = leafTiles[1];
                 }
                 else if (dx == half)
                 {
-                    //right top corner
                     leaf = leafTiles[3];
                 }
 
-                //A bit of shading :)
                 Color color = Color.white;
                 color *= ((float)i / (float)h) * 0.2f + 0.8f;
                 color.a = 1f;
@@ -506,7 +707,6 @@ public class TerrainGenerator : MonoBehaviour
     bool ContainsTree(int x, int surfaceY)
     {
         if (decoTilemap == null || trunkTile == null) return false;
-
 
         int r = PositiveHash(x, surfaceY, seed);
         float u01 = (r % 10000) / 10000f;
