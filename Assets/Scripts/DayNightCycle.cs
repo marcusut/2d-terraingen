@@ -41,6 +41,8 @@ public class DayNightCycle : MonoBehaviour
 
     private SpriteRenderer sunSprite;
     private SpriteRenderer moonSprite;
+    private Light2D sunLocalLight;
+    private Light2D moonLocalLight;
 
     private void Awake()
     {
@@ -50,8 +52,16 @@ public class DayNightCycle : MonoBehaviour
         if (ambientLightColor == null) ambientLightColor = new Gradient();
         if (cloudTint == null) cloudTint = new Gradient();
 
-        if (sunTransform != null) sunSprite = sunTransform.GetComponent<SpriteRenderer>();
-        if (moonTransform != null) moonSprite = moonTransform.GetComponent<SpriteRenderer>();
+        if (sunTransform != null) 
+        {
+            sunSprite = sunTransform.GetComponent<SpriteRenderer>();
+            sunLocalLight = sunTransform.GetComponent<Light2D>();
+        }
+        if (moonTransform != null) 
+        {
+            moonSprite = moonTransform.GetComponent<SpriteRenderer>();
+            moonLocalLight = moonTransform.GetComponent<Light2D>();
+        }
     }
 
     private void Update()
@@ -145,7 +155,12 @@ public class DayNightCycle : MonoBehaviour
         if (sunSprite != null)
         {
             sunSprite.color = currentSunColor;
-            sunSprite.enabled = sunIntensity > 0.01f; // Make sprite invisible when light is off
+            sunSprite.enabled = sunIntensity > 0.01f;
+        }
+        if (sunLocalLight != null)
+        {
+            sunLocalLight.color = currentSunColor;
+            sunLocalLight.intensity = sunIntensity > 0.01f ? 1f : 0f; // Toggle local light
         }
         
         // Moon Light
@@ -160,7 +175,12 @@ public class DayNightCycle : MonoBehaviour
         if (moonSprite != null)
         {
             moonSprite.color = currentMoonColor;
-            moonSprite.enabled = moonIntensity > 0.01f; // Make sprite invisible when light is off
+            moonSprite.enabled = moonIntensity > 0.01f;
+        }
+        if (moonLocalLight != null)
+        {
+            moonLocalLight.color = currentMoonColor;
+            moonLocalLight.intensity = moonIntensity > 0.01f ? 1f : 0f; // Toggle local light
         }
     }
 
