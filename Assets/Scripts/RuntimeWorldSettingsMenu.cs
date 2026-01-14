@@ -22,6 +22,10 @@ public class RuntimeWorldSettingsMenu : MonoBehaviour
     readonly List<FieldInfo> _fields = new List<FieldInfo>();
     readonly Dictionary<FieldInfo, object> _pending = new Dictionary<FieldInfo, object>();
 
+    bool _prevCursorVisible;
+    CursorLockMode _prevCursorLock;
+    float _prevTimeScale = 1f;
+
     void Awake()
     {
         if (!generator) generator = FindObjectOfType<TerrainGenerator>();
@@ -42,12 +46,29 @@ public class RuntimeWorldSettingsMenu : MonoBehaviour
     {
         _open = !_open;
 
-        if (pauseGameWhenOpen)
-            Time.timeScale = _open ? 0f : 1f;
+        if (_open)
+        {
+            
+            _prevCursorVisible = Cursor.visible;
+            _prevCursorLock = Cursor.lockState;
+            _prevTimeScale = Time.timeScale;
 
-        Cursor.visible = _open;
-        Cursor.lockState = _open ? CursorLockMode.None : CursorLockMode.None;
+            if (pauseGameWhenOpen)
+                Time.timeScale = 0f;
+
+            Cursor.visible = true;
+            Cursor.lockState = CursorLockMode.None;
+        }
+        else
+        {
+            if (pauseGameWhenOpen)
+                Time.timeScale = _prevTimeScale;
+
+            Cursor.visible = _prevCursorVisible;
+            Cursor.lockState = _prevCursorLock;
+        }
     }
+
 
     void OnGUI()
     {
