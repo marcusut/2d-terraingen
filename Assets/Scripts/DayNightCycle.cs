@@ -11,19 +11,23 @@ public class DayNightCycle : MonoBehaviour
     public bool pauseTime;
 
     [Header("References")]
-    public Transform sunTransform;
-    public Transform moonTransform;
-    public Light2D globalLight; // The ambient global light (No Shadows)
-    public Light2D sunlight;    // The Point Light on the Sun Sprite (Glow, No Shadows)
-    public Light2D worldLight;  // NEW: Directional Light for World Shadows
+    public Transform sunTransform; // The Visual Sun Sprite
+    public Transform moonTransform; // The Visual Moon Sprite
+    public Light2D globalLight; // Ambient
+    public Light2D sunlight;    // The Actual Light Source (Should be separate object now)
+    public Light2D moonlight;   // The Actual Moon Light Source
     public Camera mainCamera;
     public StarField starField; 
 
-    [Header("Orbit Settings")]
-    public float orbitRadius = 10f;
-    public float horizonHeight = -2f; 
+    [Header("Visual Orbit (Sprite)")]
+    public float visualOrbitRadius = 15f;
+    public float visualHorizonHeight = -2f; 
+    public float celestialScale = 3f;
     [Range(0f, 1f)] public float verticalParallax = 0.9f;
-    public float celestialScale = 1f;
+
+    [Header("Light Orbit (Shadows)")]
+    public float lightOrbitRadius = 100f; // Far away for parallel shadows
+    public float lightHorizonHeight = -20f; // Dip lower to ensure total darkness
 
     [Header("Colors & Gradients")]
     public Gradient skyColor;
@@ -71,54 +75,70 @@ public class DayNightCycle : MonoBehaviour
         float camX = mainCamera.transform.position.x;
         float camY = mainCamera.transform.position.y;
         
-        float skyYOffset = camY * verticalParallax;
-        float orbitCenterY = skyYOffset + horizonHeight + orbitRadius;
-
         float sunAngle = (0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f);
+        float moonAngle = sunAngle + Mathf.PI;
 
-        // Sun Visuals (Parallax)
+        // 1. Update Visuals (Close Orbit)
+        float visualCenterY = (camY * verticalParallax) + visualHorizonHeight + visualOrbitRadius;
+        
         if (sunTransform != null)
         {
-            float sunX = Mathf.Cos(sunAngle) * orbitRadius;
-            float sunY = orbitCenterY + Mathf.Sin(sunAngle) * orbitRadius;
+            float sunX = Mathf.Cos(sunAngle) * visualOrbitRadius;
+            float sunY = visualCenterY + Mathf.Sin(sunAngle) * visualOrbitRadius;
             
             sunTransform.position = new Vector3(camX + sunX, sunY, 0);
             sunTransform.localScale = Vector3.one * celestialScale;
             
-            float rotZ = (sunAngle - Mathf.PI) * Mathf.Rad2Deg;
-            sunTransform.rotation = Quaternion.Euler(0, 0, rotZ);
+            // Rotate sprite to face center? Or keep upright?
+            // Usually sun sprites stay upright or rotate slowly.
+            // sunTransform.rotation = Quaternion.Euler(0, 0, (sunAngle - Mathf.PI) * Mathf.Rad2Deg);
         }
 
-        // Moon Visuals (Parallax)
         if (moonTransform != null)
         {
-            float moonAngle = sunAngle + Mathf.PI;
-            float moonX = Mathf.Cos(moonAngle) * orbitRadius;
-            float moonY = orbitCenterY + Mathf.Sin(moonAngle) * orbitRadius;
+            float moonX = Mathf.Cos(moonAngle) * visualOrbitRadius;
+            float moonY = visualCenterY + Mathf.Sin(moonAngle) * visualOrbitRadius;
 
             moonTransform.position = new Vector3(camX + moonX, moonY, 0);
             moonTransform.localScale = Vector3.one * celestialScale;
+        }
+
+        // 2. Update Lights (Far Orbit for Parallel Shadows)
+        // Lights follow camera exactly to avoid "swinging" shadows relative to player
+        float lightCenterY = camY + lightHorizonHeight + lightOrbitRadius;
+
+        if (sunlight != null)
+        {
+            float lx = Mathf.Cos(sunAngle) * lightOrbitRadius;
+            float ly = lightCenterY + Mathf.Sin(sunAngle) * lightOrbitRadius;
+            sunlight.transform.position = new Vector3(camX + lx, ly, 0);
             
-            float rotZ = (moonAngle - Mathf.PI) * Mathf.Rad2Deg;
-            moonTransform.rotation = Quaternion.Euler(0, 0, rotZ);
+            // Point light rotation doesn't matter for shadows, position does.
+        }
+
+        if (moonlight != null)
+        {
+            float lx = Mathf.Cos(moonAngle) * lightOrbitRadius;
+            float ly = lightCenterY + Mathf.Sin(moonAngle) * lightOrbitRadius;
+            moonlight.transform.position = new Vector3(camX + lx, ly, 0);
         }
     }
 
     private void UpdateLighting()
     {
-        // 1. Global Ambient (Base brightness, no shadows)
+        // Global Ambient
         if (globalLight != null && ambientLightColor != null)
         {
             globalLight.color = ambientLightColor.Evaluate(timeOfDay);
         }
 
-        // 2. Camera Background
+        // Camera Background
         if (mainCamera != null && skyColor != null)
         {
             mainCamera.backgroundColor = skyColor.Evaluate(timeOfDay);
         }
         
-        // 3. Sun Glow (Visual only)
+        // Sun Light
         Color currentSunColor = sunColor != null ? sunColor.Evaluate(timeOfDay) : Color.white;
         if (sunlight != null)
         {
@@ -130,38 +150,15 @@ public class DayNightCycle : MonoBehaviour
         {
             sunSprite.color = currentSunColor;
         }
-
-        // 4. World Light (Directional Shadows) - NEW
-        if (worldLight != null)
-        {
-            worldLight.color = currentSunColor;
-            
-            // Intensity matches Sun height
-            float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
-            worldLight.intensity = Mathf.Clamp01(sunHeight);
-
-            // Optional: Rotate slightly to match time of day, but keep mostly downward
-            // Noon (0.5) = -90 deg (Down). Sunrise (0.25) = -45 deg? Sunset (0.75) = -135 deg?
-            // Let's clamp it so shadows don't get too long/weird.
-            // Range: -60 to -120 degrees.
-            float angle = Mathf.Lerp(-60f, -120f, (timeOfDay - 0.25f) * 2f); // Map 0.25-0.75 to angles
-            if (timeOfDay < 0.25f || timeOfDay > 0.75f) angle = -90f; // Reset at night
-            
-            worldLight.transform.rotation = Quaternion.Euler(0, 0, angle);
-        }
         
-        // 5. Moon Glow
+        // Moon Light
         Color currentMoonColor = moonColor != null ? moonColor.Evaluate(timeOfDay) : Color.white;
-        if (moonTransform != null)
+        if (moonlight != null)
         {
-            var moonLightComp = moonTransform.GetComponent<Light2D>();
-            if (moonLightComp != null)
-            {
-                moonLightComp.color = currentMoonColor;
-                float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
-                float moonIntensity = Mathf.Clamp01(-sunHeight);
-                moonLightComp.intensity = moonIntensity * 0.3f; 
-            }
+            moonlight.color = currentMoonColor;
+            float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
+            float moonIntensity = Mathf.Clamp01(-sunHeight);
+            moonlight.intensity = moonIntensity * 0.3f;
         }
         if (moonSprite != null)
         {
