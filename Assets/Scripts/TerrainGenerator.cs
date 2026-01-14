@@ -783,4 +783,19 @@ public class TerrainGenerator : MonoBehaviour
                 decoTilemap.SetTile(new Vector3Int(cx + dx, y, 0), null);
         }
     }
+
+    public void ResetWorld()
+    {
+        // Clear all loaded tiles (safe + prevents “leftover” tiles after changing parameters)
+        if (tilemap != null) tilemap.ClearAllTiles();
+        if (decoTilemap != null) decoTilemap.ClearAllTiles();
+        if (wallTilemap != null) wallTilemap.ClearAllTiles();
+
+        // Reset chunk bookkeeping so it re-generates cleanly
+        activeChunks.Clear();
+        neededThisFrame.Clear();
+
+        // Generate immediately
+        UpdateWorld(force: true);
+    }
 }
