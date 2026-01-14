@@ -12,8 +12,8 @@ public class TerrainGenerator : MonoBehaviour
     public TileBase[] grassEdges;
     public TileBase[] dirtVariants;      // 4 dirt tiles
     public TileBase[] dirtEdges;         // dirt edge tiles (make sure indexes exist!)
-    public TileBase[] dirtCorners;       // dirt corner tiles
     public TileBase[] rockTiles;
+    public TileBase worldBottomTile;
 
     [Header("Decor (No colliders / pass-through)")]
     public Tilemap decoTilemap;          // Separate tilemap without any collider
@@ -183,9 +183,12 @@ public class TerrainGenerator : MonoBehaviour
             }
 
             // Rocks (avoid placing inside carved-out empty space)
-            int r = PositiveHash(x, surfaceY, seed);
-            int rock_y = surfaceY - (r % fillDepth) + minRockSize;
-            TryPlaceRock(tilemap, x, rock_y);
+            if (x >= startX + maxRockSize)
+            {
+                int r = PositiveHash(x, surfaceY, seed);
+                int rock_y = surfaceY - (r % fillDepth) + minRockSize;
+                TryPlaceRock(tilemap, x, rock_y);
+            }
 
             // Clear above/below
             for (int y = surfaceY + 1; y <= maxY; y++)
@@ -203,6 +206,15 @@ public class TerrainGenerator : MonoBehaviour
 
                 if (!nearEntrance)
                     TryPlaceTreeAtColumn(x, surfaceY);
+            }
+
+            // Fill the bottom of the world with the world bottom tile
+            if (worldBottomTile != null)
+            {
+                for (int y = surfaceY - fillDepth - 1; y >= surfaceY - fillDepth - 3; y--)
+                {
+                    tilemap.SetTile(new Vector3Int(x, y, 0), worldBottomTile);
+                }
             }
         }
 
@@ -239,18 +251,34 @@ public class TerrainGenerator : MonoBehaviour
             for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
             {
                 if (dirtVariants.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
-                    dirtCorners.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
                     dirtEdges.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))))
                 {
                     var dirtTile = VariantForPosition(dirtVariants, x, y);
-
-                    if (tilemap.GetTile(new Vector3Int(x + 1, y, 0)) == null)
+                    if (dirtEdges.Length >= 15)
                     {
-                        dirtTile = dirtEdges.Length > 4 ? dirtEdges[4] : dirtTile;
-                    }
-                    else if (tilemap.GetTile(new Vector3Int(x - 1, y, 0)) == null)
-                    {
-                        dirtTile = dirtEdges.Length > 3 ? dirtEdges[3] : dirtTile;
+                        int dirtIndex = 0;
+                        //We add a number to the state if we have a tile in that direction
+                        if (tilemap.GetTile(new Vector3Int(x - 1, y, 0)) != null)
+                        {
+                            dirtIndex += 1; //Tile on the left
+                        }
+                        if (tilemap.GetTile(new Vector3Int(x + 1, y, 0)) != null)
+                        {
+                            dirtIndex += 2; //Tile on the right
+                        }
+                        if (tilemap.GetTile(new Vector3Int(x, y + 1, 0)) != null)
+                        {
+                            dirtIndex += 4; //Tile on top
+                        }
+                        if (tilemap.GetTile(new Vector3Int(x, y - 1, 0)) != null)
+                        {
+                            dirtIndex += 8; //Tile on bottom
+                        }
+                        
+                        if (dirtIndex != 15)
+                        {
+                            dirtTile = dirtEdges[dirtIndex];
+                        }
                     }
 
                     tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
@@ -261,10 +289,22 @@ public class TerrainGenerator : MonoBehaviour
                 if (tile != null)
                 {
                     Color color = Color.white;
-                    color *= Math.Max(0, depthShadowThing / (float)Math.Max(1, fillDepth - 5));
+                    color *= Math.Max(0.35f, depthShadowThing / (float)Math.Max(1, fillDepth - 5));
                     color.a = 1f;
                     TileChangeData data = new TileChangeData(new Vector3Int(x, y, 0), tile, color, Matrix4x4.identity);
                     tilemap.SetTile(data, true);
+                }
+                if (wallTilemap != null)
+                {
+                    tile = wallTilemap.GetTile(new Vector3Int(x, y, 0));
+                    if (tile != null)
+                    {
+                        Color color = Color.white;
+                        color *= Math.Max(0.5f, depthShadowThing / (float)Math.Max(1, fillDepth - 5));
+                        color.a = 1f;
+                        TileChangeData data = new TileChangeData(new Vector3Int(x, y, 0), tile, color, Matrix4x4.identity);
+                        wallTilemap.SetTile(data, true);
+                    }
                 }
                 depthShadowThing--;
             }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using UnityEngine.InputSystem;
+using System.Linq;
 
 public class TileMiner : MonoBehaviour
 {
@@ -8,6 +9,7 @@ public class TileMiner : MonoBehaviour
     public Camera cam;
     public Tilemap groundTilemap;
     public Tilemap wallTilemap;
+    public TileBase[] unbreakableTiles;
 
     [Header("Mining")]
     public float maxDistance = 6f;
@@ -40,6 +42,7 @@ public class TileMiner : MonoBehaviour
 
         TileBase t = groundTilemap.GetTile(cell);
         if (t == null) return;
+        if (unbreakableTiles.Contains(t)) return;
 
         groundTilemap.SetTile(cell, null);
 
