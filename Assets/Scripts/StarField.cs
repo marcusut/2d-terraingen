@@ -7,6 +7,10 @@ public class StarField : MonoBehaviour
     public Vector2 areaSize = new Vector2(20, 10);
     public float parallaxFactor = 0.05f; // Very distant
     
+    [Header("Sorting")]
+    public string sortingLayerName = "Background";
+    public int sortingOrder = -60; // Behind clouds (-50)
+
     private Transform cam;
     private Vector3 lastCamPos;
     private ParticleSystem particleSys;
@@ -32,10 +36,14 @@ public class StarField : MonoBehaviour
 
         var renderer = particleSys.GetComponent<ParticleSystemRenderer>();
         renderer.material = new Material(Shader.Find("Particles/Standard Unlit"));
+        
+        // Set Sorting Layer
+        renderer.sortingLayerName = sortingLayerName;
+        renderer.sortingOrder = sortingOrder;
+
         if (starSprite)
         {
              renderer.material.mainTexture = starSprite.texture;
-             // If using sprite sheet, need more setup, assuming simple texture for now
         }
 
         // Spawn initial particles
@@ -48,7 +56,7 @@ public class StarField : MonoBehaviour
                 0
             );
             particles[i].startSize = Random.Range(0.1f, 0.3f);
-            particles[i].startColor = Color.white;
+            particles[i].startColor = new Color(1f, 1f, 1f, 0f); // Start invisible
             particles[i].remainingLifetime = float.MaxValue;
         }
         
@@ -59,41 +67,48 @@ public class StarField : MonoBehaviour
     {
         if (!cam) return;
 
-        Vector3 delta = cam.position - lastCamPos;
-        transform.position += delta * (1f - parallaxFactor); // Move with camera but slightly slower? 
-        // Actually for infinite distance (stars), they should move WITH the camera almost 1:1 so they appear static relative to world?
-        // No, if they are infinite, they should stay at fixed screen coordinates mostly.
-        // If parallaxFactor = 0 (background), they move with camera 100%.
-        // If parallaxFactor = 1 (foreground), they don't move with camera.
+        // Simple parallax: Move slightly opposite to camera movement to fake distance
+        // Since it's a child of the camera, it moves WITH the camera by default (0 parallax).
+        // To make it look like it's moving slower (parallax), we need to offset it.
         
-        // Let's just stick them to camera and apply small offset
-        transform.position = new Vector3(cam.position.x, cam.position.y, 10f);
+        // Actually, for stars (infinite distance), they should stay fixed on screen or move very little.
+        // Being a child of the camera keeps them fixed on screen (0 movement relative to camera).
+        // To add parallax, we move them slightly against the camera movement?
+        // No, if they are child of camera, they are locked. 
+        // If we want them to move, we shift local position?
         
-        // Apply small parallax offset to particles? 
-        // Or just move the whole container.
-        // If we want them to move slightly as we move:
-        // transform.position = cam.position + (cam.position * parallaxFactor); 
-        // But we need to wrap them if they go off screen?
-        // For stars, usually they are just static on screen or move very slowly.
+        // Let's keep it simple: Fixed to camera is fine for stars (infinite distance).
+        // If we want slight movement:
+        // transform.localPosition += (lastCamPos - cam.position) * parallaxFactor;
+        
+        // But we need to wrap them if they drift too far. 
+        // For now, let's just keep them static relative to camera (infinite distance).
         
         lastCamPos = cam.position;
     }
     
-    // DayNightCycle will handle alpha via material or we can expose a method
     public void SetStarAlpha(float alpha)
     {
         if (particleSys == null) return;
-        var main = particleSys.main;
-        main.startColor = new Color(1,1,1, alpha);
         
-        // Update existing particles
+        if (particles == null || particles.Length < starCount)
+            particles = new ParticleSystem.Particle[starCount];
+
         int count = particleSys.GetParticles(particles);
+        bool changed = false;
+        
         for(int i=0; i<count; i++)
         {
             Color c = particles[i].startColor;
-            c.a = alpha;
-            particles[i].startColor = c;
+            if (Mathf.Abs(c.a - alpha) > 0.01f)
+            {
+                c.a = alpha;
+                particles[i].startColor = c;
+                changed = true;
+            }
         }
-        particleSys.SetParticles(particles, count);
+        
+        if (changed)
+            particleSys.SetParticles(particles, count);
     }
 }
