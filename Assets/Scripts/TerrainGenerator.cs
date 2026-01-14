@@ -1,15 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Unity.AppUI.Redux;
+using Unity.Mathematics;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using UnityEngine.WSA;
 
 public class TerrainGenerator : MonoBehaviour
 {
     [Header("References (Collidable ground)")]
     public Tilemap tilemap;              // Ground tilemap (with collider)
     public TileBase[] grassVariants;     // 4 grass tiles
+    public TileBase[] grassEdges;
     public TileBase[] dirtVariants;      // 4 dirt tiles
-    public TileBase[] rockVariants;
+    public TileBase[] dirtEdges;      // 4 dirt tiles
+    public TileBase[] dirtCorners;      // 4 dirt tiles
+    public TileBase[] rockTiles;
 
     [Header("Decor (No colliders / pass-through)")]
     public Tilemap decoTilemap;          // Separate tilemap without any collider
@@ -29,7 +37,8 @@ public class TerrainGenerator : MonoBehaviour
     public int fillDepth = 40;             // how far we fill dirt below surface
     public int seed = 12345;               // change to get a different world
     [Range(0f, 1f)] public float rockChance = 0.10f;
-    public int rockSize = 1;
+    public int minRockSize = 1;
+    public int maxRockSize = 3;
 
     [Header("Tree Generation")]
     [Range(0f, 1f)] public float treeChance = 0.10f; // per-column probability
@@ -121,10 +130,10 @@ public class TerrainGenerator : MonoBehaviour
                 var grassTile = VariantForPosition(grassVariants, x, surfaceY);
                 tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassTile);
             }
-            
+
 
             // Dirt below the surface
-            for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
+            for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--) 
             {
                 if (tilemap.GetTile(new Vector3Int(x, y, 0)) == null)
                 {
@@ -146,7 +155,7 @@ public class TerrainGenerator : MonoBehaviour
             }
 
             int r = PositiveHash(x, surfaceY, seed);
-            int rock_y = surfaceY - (r % fillDepth) + rockSize;
+            int rock_y = surfaceY - (r % fillDepth) + minRockSize;
             TryPlaceRock(tilemap, x, rock_y);
 
             // Clear above/below
@@ -159,23 +168,145 @@ public class TerrainGenerator : MonoBehaviour
             if (decoTilemap != null)
                 TryPlaceTreeAtColumn(x, surfaceY);
         }
+
+        //Pass two to set edges and corners and stuff
+        //Also shading
+        //Covers a one tile wider range to fix tiles on the borders of chunks
+        for (int x = startX-1; x < endX+1; x++)
+        {
+            int surfaceY = GetSurfaceHeight(x);
+
+            // Grass for the surface
+            if (grassVariants.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))) || grassEdges.Contains(tilemap.GetTile(new Vector3Int(x, surfaceY, 0))))
+            {
+                TileBase grassEdge = VariantForPosition(grassVariants, x, surfaceY);
+                if (tilemap.GetTile(new Vector3Int(x-1, surfaceY, 0)) == null && tilemap.GetTile(new Vector3Int(x + 1, surfaceY, 0)) == null)
+                {
+                    grassEdge = grassEdges[2];
+                }
+                else if (tilemap.GetTile(new Vector3Int(x - 1, surfaceY, 0)) == null)
+                {
+                    grassEdge = grassEdges[0];
+                }
+                else if (tilemap.GetTile(new Vector3Int(x + 1, surfaceY, 0)) == null)
+                {
+                    grassEdge = grassEdges[1];
+                }
+                tilemap.SetTile(new Vector3Int(x, surfaceY, 0), grassEdge);
+            }
+
+            // Dirt below the surface
+            float depthShadowThing = Math.Max(1, fillDepth - 5);
+            for (int y = surfaceY - 1; y >= surfaceY - fillDepth; y--)
+            {
+                //Currently only side edge tiles for dirt
+                if (dirtVariants.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
+                    dirtCorners.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))) ||
+                    dirtEdges.Contains(tilemap.GetTile(new Vector3Int(x, y, 0))))
+                {
+                    var dirtTile = VariantForPosition(dirtVariants, x, y);
+
+                    
+                    if (tilemap.GetTile(new Vector3Int(x + 1, y, 0)) == null)
+                    {
+                        dirtTile = dirtEdges[4];
+                    }
+                    else if (tilemap.GetTile(new Vector3Int(x - 1, y, 0)) == null)
+                    {
+                        dirtTile = dirtEdges[3];
+                    }
+                    tilemap.SetTile(new Vector3Int(x, y, 0), dirtTile);
+                }
+
+                //Shading
+                TileBase tile = tilemap.GetTile(new Vector3Int(x, y, 0));
+                if (tile != null)
+                {
+                    Color color = Color.white;
+                    color *= Math.Max(0, depthShadowThing / (float)Math.Max(1, fillDepth - 5));
+                    color.a = 1f;
+                    TileChangeData data = new TileChangeData(new Vector3Int(x, y, 0), tile, color, Matrix4x4.identity);
+                    tilemap.SetTile(data, true);
+                }
+                depthShadowThing--;
+            }
+        }
     }
 
     void TryPlaceRock(Tilemap tilemap, int x, int y)
     {
-        var rockTile = VariantForPosition(rockVariants, x, y);
-        if (rockTile == null) return;
+        if (rockTiles.Length == 0) return;
+        var rockTile = rockTiles[0];
 
         int r = PositiveHash(x, y, seed);
         if ((r % 10000) / 10000f > rockChance) return;
 
+        int rockSize = (r % ((maxRockSize + 1) - minRockSize)) + minRockSize;
+
         //generate a rock
         int x_start = x - rockSize;
         int y_start = y - rockSize;
+        if (rockSize == 1)
+        {
+            tilemap.SetTile(new Vector3Int(x_start, y_start, 0), rockTile);
+            return;
+        }
+        //Safety check
+        if (rockTiles.Length < 10) return;
+
         for (int i = x_start; i < x_start + rockSize; i++)
         {
             for (int j = y_start; j < y_start + rockSize; j++)
             {
+                rockTile = rockTiles[1];
+                //Awful variants code
+                if (i == x_start)
+                {
+                    if (j == y_start)
+                    {
+                        //botton left corner
+                        rockTile = rockTiles[7];
+                    }
+                    else if (j == y_start + rockSize - 1)
+                    {
+                        //top left corner
+                        rockTile = rockTiles[2];
+                    }
+                    else
+                    {
+                        //left side
+                        rockTile = rockTiles[5];
+                    }
+                }
+                else if (i == x_start + rockSize - 1)
+                {
+                    if (j == y_start)
+                    {
+                        //botton right corner
+                        rockTile = rockTiles[9];
+                    }
+                    else if (j == y_start + rockSize - 1)
+                    {
+                        //top right corner
+                        rockTile = rockTiles[4];
+                    }
+                    else
+                    {
+                        //right side
+                        rockTile = rockTiles[6];
+                    }
+                }
+                else if (j == y_start)
+                {
+                    //bottom side
+                    rockTile = rockTiles[8];
+                }
+                else if (j == y_start + rockSize - 1)
+                {
+                    //top side
+                    rockTile = rockTiles[3];
+                }
+                
                 tilemap.SetTile(new Vector3Int(i, j, 0), rockTile);
             }
         }
@@ -207,8 +338,18 @@ public class TerrainGenerator : MonoBehaviour
     void ClearDecoRange(int startX, int endX, int minY, int maxY)
     {
         for (int x = startX; x < endX; x++)
+        {
+            if (ContainsTree(x, GetSurfaceHeight(x)))
+            {
+                ClearLeaves(x, GetSurfaceHeight(x));
+            }
             for (int y = minY; y <= maxY; y++)
-                decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
+                //We're removing leaves a bit differently to avoid them getting cut off
+                if (!leafTiles.Contains(decoTilemap.GetTile(new Vector3Int(x, y, 0))))
+                {
+                    decoTilemap.SetTile(new Vector3Int(x, y, 0), null);
+                }
+        }
     }
     
     void ClearWallRange(int startX, int endX, int minY, int maxY)
@@ -269,6 +410,10 @@ public class TerrainGenerator : MonoBehaviour
         if (u01 > treeChance) return;
         if (requireFlatSpot && !IsFlatEnough(x, surfaceY)) return;
 
+        //Adjacent trees look bad
+        if (ContainsTree(x + 1, surfaceY)) return;
+        if (ContainsTree(x - 1, surfaceY)) return;
+
         int trunkH = Mathf.Clamp(
             minTrunkHeight + (r % (maxTrunkHeight - minTrunkHeight + 1)),
             minTrunkHeight, maxTrunkHeight);
@@ -279,7 +424,7 @@ public class TerrainGenerator : MonoBehaviour
 
         
         TileBase leaf = (leafTiles != null && leafTiles.Length > 0)
-            ? leafTiles[(r / 997) % leafTiles.Length]
+            ? leafTiles[0]
             : null;
 
         // place trunk
@@ -294,24 +439,108 @@ public class TerrainGenerator : MonoBehaviour
         
             
         PlaceTriangle(cx, cy, canopyR + 1, leaf); 
-       
     }
-
-
-
-
 
     void PlaceTriangle(int cx, int cy, int h, TileBase leaf)
     {
         if (leaf == null) return;
+        if (leafTiles.Length < 10) return;
 
+        var leaf_start = leaf;
         
         for (int i = 0; i < h; i++)
         {
             int half = (h - 1) - i;   
             int y = cy + i;           
             for (int dx = -half; dx <= half; dx++)
-                decoTilemap.SetTile(new Vector3Int(cx + dx, y, 0), leaf);
+            {
+                leaf = leaf_start;
+                if (i == 0)
+                {
+                    if (dx == -half)
+                    {
+                        //bottom left
+                        //always single
+                        leaf = leafTiles[8];
+                    }
+                    else if (dx == half)
+                    {
+                        //bottom right
+                        //always single
+                        leaf = leafTiles[9];
+                    }
+                    else
+                    {
+                        //bottom
+                        leaf = leafTiles[5];
+                    }
+                }
+                else if (i == h - 1)
+                {
+                    //top
+                    //this is always single
+                    leaf = leafTiles[7];
+                }
+                else if (dx == -half)
+                {
+                    //left top corner
+                    leaf = leafTiles[1];
+                }
+                else if (dx == half)
+                {
+                    //right top corner
+                    leaf = leafTiles[3];
+                }
+
+                //A bit of shading :)
+                Color color = Color.white;
+                color *= ((float)i / (float)h) * 0.2f + 0.8f;
+                color.a = 1f;
+                TileChangeData data = new TileChangeData(new Vector3Int(cx + dx, y, 0), leaf, color, Matrix4x4.identity);
+
+                decoTilemap.SetTile(data, true);
+            }
+        }
+    }
+
+    bool ContainsTree(int x, int surfaceY)
+    {
+        if (decoTilemap == null || trunkTile == null) return false;
+
+
+        int r = PositiveHash(x, surfaceY, seed);
+        float u01 = (r % 10000) / 10000f;
+
+        if (u01 > treeChance) return false;
+        if (requireFlatSpot && !IsFlatEnough(x, surfaceY)) return false;
+
+        return true;
+    }
+
+    void ClearLeaves(int x, int surfaceY)
+    {
+        int r = PositiveHash(x, surfaceY, seed);
+        int canopyR = Mathf.Clamp(
+            minCanopyRadius + ((r / 7) % (maxCanopyRadius - minCanopyRadius + 1)),
+            minCanopyRadius, maxCanopyRadius);
+
+        int baseY = surfaceY + 1;
+
+        int trunkH = Mathf.Clamp(
+            minTrunkHeight + (r % (maxTrunkHeight - minTrunkHeight + 1)),
+            minTrunkHeight, maxTrunkHeight);
+
+        int cx = x;
+        int cy = baseY + trunkH;
+
+        int h = canopyR + 1;
+
+        for (int i = 0; i < h; i++)
+        {
+            int half = (h - 1) - i;
+            int y = cy + i;
+            for (int dx = -half; dx <= half; dx++)
+                decoTilemap.SetTile(new Vector3Int(cx + dx, y, 0), null);
         }
     }
 }
