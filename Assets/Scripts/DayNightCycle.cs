@@ -28,6 +28,7 @@ public class DayNightCycle : MonoBehaviour
     [Header("Light Orbit (Shadows)")]
     public float lightOrbitRadius = 100f; // Far away for parallel shadows
     public float lightHorizonHeight = -20f; // Dip lower to ensure total darkness
+    public float shadowNoonOffset = 20f; // Horizontal offset to prevent vertical shadows
 
     [Header("Colors & Gradients")]
     public Gradient skyColor;
@@ -88,10 +89,6 @@ public class DayNightCycle : MonoBehaviour
             
             sunTransform.position = new Vector3(camX + sunX, sunY, 0);
             sunTransform.localScale = Vector3.one * celestialScale;
-            
-            // Rotate sprite to face center? Or keep upright?
-            // Usually sun sprites stay upright or rotate slowly.
-            // sunTransform.rotation = Quaternion.Euler(0, 0, (sunAngle - Mathf.PI) * Mathf.Rad2Deg);
         }
 
         if (moonTransform != null)
@@ -104,16 +101,13 @@ public class DayNightCycle : MonoBehaviour
         }
 
         // 2. Update Lights (Far Orbit for Parallel Shadows)
-        // Lights follow camera exactly to avoid "swinging" shadows relative to player
-        float lightCenterY = camY + lightHorizonHeight + lightOrbitRadius;
+        float lightCenterY = lightHorizonHeight + lightOrbitRadius; // Fixed Y position, no parallax
 
         if (sunlight != null)
         {
             float lx = Mathf.Cos(sunAngle) * lightOrbitRadius;
             float ly = lightCenterY + Mathf.Sin(sunAngle) * lightOrbitRadius;
             sunlight.transform.position = new Vector3(camX + lx, ly, 0);
-            
-            // Point light rotation doesn't matter for shadows, position does.
         }
 
         if (moonlight != null)
@@ -140,29 +134,33 @@ public class DayNightCycle : MonoBehaviour
         
         // Sun Light
         Color currentSunColor = sunColor != null ? sunColor.Evaluate(timeOfDay) : Color.white;
+        float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
+        float sunIntensity = Mathf.Clamp01(sunHeight);
+
         if (sunlight != null)
         {
             sunlight.color = currentSunColor;
-            float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
-            sunlight.intensity = Mathf.Clamp01(sunHeight);
+            sunlight.intensity = sunIntensity;
         }
         if (sunSprite != null)
         {
             sunSprite.color = currentSunColor;
+            sunSprite.enabled = sunIntensity > 0.01f; // Make sprite invisible when light is off
         }
         
         // Moon Light
         Color currentMoonColor = moonColor != null ? moonColor.Evaluate(timeOfDay) : Color.white;
+        float moonIntensity = Mathf.Clamp01(-sunHeight) * 0.3f;
+
         if (moonlight != null)
         {
             moonlight.color = currentMoonColor;
-            float sunHeight = Mathf.Sin((0.5f - timeOfDay) * Mathf.PI * 2f + (Mathf.PI / 2f));
-            float moonIntensity = Mathf.Clamp01(-sunHeight);
-            moonlight.intensity = moonIntensity * 0.3f;
+            moonlight.intensity = moonIntensity;
         }
         if (moonSprite != null)
         {
             moonSprite.color = currentMoonColor;
+            moonSprite.enabled = moonIntensity > 0.01f; // Make sprite invisible when light is off
         }
     }
 

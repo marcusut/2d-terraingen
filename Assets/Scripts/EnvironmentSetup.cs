@@ -137,7 +137,7 @@ public class EnvironmentSetup : MonoBehaviour
             new GradientAlphaKey[] { new(1f, 0f), new(1f, 1f) }
         );
 
-        // Sun Color
+        // Sun Color: Fade alpha to 0 at night
         dnc.sunColor = CreateGradient(
             new GradientColorKey[] {
                 new(Color.black, 0.0f),
@@ -148,10 +148,17 @@ public class EnvironmentSetup : MonoBehaviour
                 new(Color.black, 0.8f),
                 new(Color.black, 1.0f)
             },
-            new GradientAlphaKey[] { new(1f, 0f), new(1f, 1f) }
+            new GradientAlphaKey[] { 
+                new(0f, 0.0f), 
+                new(0f, 0.2f), 
+                new(1f, 0.25f), 
+                new(1f, 0.75f), 
+                new(0f, 0.8f), 
+                new(0f, 1.0f) 
+            }
         );
 
-        // Moon Color
+        // Moon Color: Fade alpha to 0 during day
         dnc.moonColor = CreateGradient(
             new GradientColorKey[] {
                 new(new Color(0.8f, 0.9f, 1f), 0.0f),
@@ -161,7 +168,14 @@ public class EnvironmentSetup : MonoBehaviour
                 new(new Color(0.8f, 0.9f, 1f), 0.8f),
                 new(new Color(0.8f, 0.9f, 1f), 1.0f)
             },
-            new GradientAlphaKey[] { new(1f, 0f), new(1f, 1f) }
+            new GradientAlphaKey[] { 
+                new(1f, 0.0f), 
+                new(1f, 0.2f), 
+                new(0f, 0.25f), 
+                new(0f, 0.75f), 
+                new(1f, 0.8f), 
+                new(1f, 1.0f) 
+            }
         );
 
         // Ambient Light
